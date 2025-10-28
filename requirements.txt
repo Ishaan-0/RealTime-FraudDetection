@@ -1,0 +1,38 @@
+# Core Data Science & ML Libraries
+pandas==2.1.4
+numpy==1.26.2
+scikit-learn==1.3.2
+xgboost==2.0.3
+# lightgbm==4.1.0  # SKIP FOR NOW - only needed for model training
+
+# Kafka Streaming
+kafka-python==2.0.2
+
+# PySpark for Stream Processing
+pyspark==3.5.0
+
+# MongoDB Integration
+pymongo==4.6.1
+dnspython==2.4.2
+
+# Data Serialization & Storage
+pyarrow==14.0.1
+fastparquet==2023.10.1
+joblib==1.3.2
+
+# Environment Management
+python-dotenv==1.0.0
+
+# Jupyter Notebook (for MODEL_BUILDING.ipynb)
+jupyter==1.0.0
+notebook==7.0.6
+ipykernel==6.27.1
+ipywidgets==8.1.1
+
+# Data Visualization
+matplotlib==3.8.2
+seaborn==0.13.0
+
+# Utilities
+tqdm==4.66.1
+requests==2.31.0
