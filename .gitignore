@@ -1,0 +1,5 @@
+.DS_Store
+data/.ipynb_checkpoints/
+credit_card_engineered.csv
+creditcard.csv
+output/checkpoints/
