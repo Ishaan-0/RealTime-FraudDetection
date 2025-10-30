@@ -1,6 +1,8 @@
 .DS_Store
 data/.ipynb_checkpoints/
-credit_card_engineered.csv
-creditcard.csv
+data/credit_card_engineered.csv
+data/creditcard.csv
+data/save_newfile.ipynb 
+data/final_creditcardFile.csv
 output/checkpoints/
 .env
