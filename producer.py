@@ -18,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bootstrap-servers", default="localhost:19092")  # EXTERNAL
     parser.add_argument("--topic", default="txns")
-    parser.add_argument("--csv-path", required=True, help="./data/credit_card_engineered.csv")
+    parser.add_argument("--csv-path", required=True, help="./data/final_creditcardFile.csv")
     parser.add_argument("--rate", type=float, default=20, help="Events per second")
     parser.add_argument("--limit", type=int, default=0, help="Max rows to send (0 = all)")
     args = parser.parse_args()

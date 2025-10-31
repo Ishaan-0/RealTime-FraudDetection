@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+import numpy as np
+import pandas as pd
 import joblib
 from datetime import datetime  
 from pymongo import MongoClient
@@ -21,25 +23,22 @@ else:
 uri = os.getenv('MONGO_URI') # actual uri from .env
 
 # MongoDB constants
-DB_NAME = "FraudDetection"
-FRAUD_COLLECTION = "FraudAlerts"
-NON_FRAUD_COLLECTION = "nonFraudTransactions"
+DB_NAME = os.getenv('MONGO_DB_NAME', 'FraudDetection')
+FRAUD_COLLECTION = os.getenv('FRAUD_COLLECTION_NAME', 'FraudAlerts')
+NON_FRAUD_COLLECTION = os.getenv('NON_FRAUD_COLLECTION_NAME', 'nonFraudTransactions')
 
 def build_schema(feature_names):
     fields = []
     # transaction_id
     fields.append(StructField("transaction_id", StringType(), True))
-
     # Raw Kaggle fields
     for i in range(1, 29):
         name = f"V{i}"
         fields.append(StructField(name, DoubleType(), True))
     fields.append(StructField("Class", IntegerType(), True))
-
     # Engineered fields — add generously, nullable
     for extra in ["log_amt", "outlier_score", "DayOfWeek", "IsWeekend"]:
         fields.append(StructField(extra, DoubleType(), True))
-
     # Any other columns in feature_names not covered (from engineered file)
     for f in feature_names:
         if f not in [f"V{i}" for i in range(1, 29)] and f not in ["Amount", "Time", "Class",
@@ -172,10 +171,14 @@ def main():
     parser.add_argument("--checkpoint-dir", default="./output/checkpoints")
     parser.add_argument(
         "--mongo-uri",
-        default="mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@democluster.8oymu.mongodb.net/?retryWrites=true&w=majority",
+        default=uri,  # Use the URI from environment variables as default
         help="MongoDB Atlas connection string"
     )
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--batch-size", type=int, default=1000,
+                       help="Number of messages to process per batch")
+    parser.add_argument("--batch-interval", type=int, default=10,
+                       help="Batch processing interval in seconds")
     args = parser.parse_args()
 
     mongo_client, db, fraud_collection, non_fraud_collection, is_admin = connect_mongo(args.mongo_uri)
@@ -212,6 +215,8 @@ def main():
         .option("kafka.bootstrap.servers", args.bootstrap_servers)
         .option("subscribe", args.topic)
         .option("startingOffsets", "latest")
+        .option("maxOffsetsPerTrigger", args.batch_size)  # Process messages per batch
+        .option("spark.streaming.kafka.maxRatePerPartition", args.batch_size // 10)  # Rate limit per partition
         .load()
     )
 
@@ -243,7 +248,6 @@ def main():
         tx_ids = pdf["transaction_id"] if "transaction_id" in pdf.columns else None
         
         # Replace inf/-inf with NaN
-        import numpy as np
         X_raw = pdf[use_cols]
         X_raw.replace([np.inf, -np.inf], np.nan, inplace=True)
         X = X_raw.values
@@ -261,7 +265,6 @@ def main():
             preds = (rf_model or xgb_model).predict(X)
             probs = (preds - np.min(preds)) / (np.ptp(preds) + 1e-9)
         
-        import pandas as pd
         out = pd.DataFrame({
             "transaction_id": tx_ids if tx_ids is not None else range(len(probs)),
             "fraud_prob": probs,
@@ -308,11 +311,22 @@ def main():
         mean_prob = out["fraud_prob"].mean()
         max_prob = out["fraud_prob"].max()
         
+        # Verify MongoDB collections
+        try:
+            fraud_count_mongo = fraud_collection.count_documents({"scored_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)}})
+            non_fraud_count_mongo = non_fraud_collection.count_documents({"scored_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)}})
+            print(f"[epoch {epoch_id}] 🔍 MongoDB Verification:")
+            print(f"   - FraudAlerts today: {fraud_count_mongo}")
+            print(f"   - NonFraudTransactions today: {non_fraud_count_mongo}")
+        except Exception as e:
+            print(f"[epoch {epoch_id}] ❌ MongoDB verification failed: {e}")
+        
         print(f"[epoch {epoch_id}] 📊 Stats: Total={total} | Fraud={fraud_count} | "
             f"Clean={non_fraud_count} | Mean prob={mean_prob:.4f} | Max prob={max_prob:.4f}\n")
 
     query = (
         parsed.writeStream.foreachBatch(foreach_batch)
+        .trigger(processingTime=f"{args.batch_interval} seconds")  # Process batch based on interval parameter
         .option("checkpointLocation", args.checkpoint_dir)
         .start()
     )
